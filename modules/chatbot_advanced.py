@@ -1,52 +1,87 @@
 import os
-from dotenv import load_dotenv
-from openai import OpenAI
+import pandas as pd
 
-# -----------------------------
-# CHARGEMENT DE LA CLE API
-# -----------------------------
-load_dotenv()  # charge le fichier .env à la racine
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    raise ValueError("Erreur : OPENAI_API_KEY non trouvé dans .env")
-
-# Création du client OpenAI
-client = OpenAI(api_key=api_key)
+try:
+    from openai import OpenAI
+except:
+    OpenAI = None
 
 
-# -----------------------------
-# FONCTION CHATBOT IA AVANCÉE
-# -----------------------------
-def chatbot_advanced(question, df):
+def chatbot_advanced(user_input, df):
     """
-    question : str, question de l'utilisateur
-    df : pandas.DataFrame, dataset pour l'analyse
-    """
-    # Limite d'affichage pour ne pas envoyer tout le dataset
-    data_sample = df.head(5).to_string()
-
-    prompt = f"""
-    Tu es un expert en data science et statistiques.
-
-    Voici un extrait du dataset :
-    {data_sample}
-
-    Question utilisateur :
-    {question}
-
-    Réponds de façon claire, structurée et professionnelle.
-    Fournis des analyses, insights ou recommandations si possible.
+    Chatbot intelligent avec fallback si pas de clé API
     """
 
-    # Requête à l'IA
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",  # modèle rapide et puissant
-        messages=[
-            {"role": "system", "content": "Tu es un expert en analyse de données."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.3  # plus bas = réponses plus précises, moins créatives
-    )
+    # 🔑 Vérifier clé API
+    api_key = os.getenv("OPENAI_API_KEY")
 
-    return response.choices[0].message.content
+    # 🧠 Si pas de clé → mode offline intelligent
+    if not api_key or OpenAI is None:
+        return offline_response(user_input, df)
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        # Résumé des données
+        data_info = f"""
+        Dataset info:
+        - Rows: {df.shape[0]}
+        - Columns: {df.shape[1]}
+        - Columns names: {list(df.columns)}
+        """
+
+        prompt = f"""
+        Tu es un expert en analyse de données.
+
+        {data_info}
+
+        Question utilisateur :
+        {user_input}
+
+        Réponds de manière simple, claire et utile.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": "Expert data analyst"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return f"⚠️ Erreur IA : {str(e)}"
+
+
+# -----------------------------
+# MODE OFFLINE (SANS IA)
+# -----------------------------
+def offline_response(user_input, df):
+
+    user_input = user_input.lower()
+
+    # 📊 Moyenne
+    if "moyenne" in user_input:
+        return df.mean(numeric_only=True).to_string()
+
+    # 📈 corrélation
+    elif "corrélation" in user_input:
+        return df.corr(numeric_only=True).to_string()
+
+    # 📊 description
+    elif "statistique" in user_input or "description" in user_input:
+        return df.describe().to_string()
+
+    # 📋 colonnes
+    elif "colonnes" in user_input:
+        return str(list(df.columns))
+
+    # 🔢 taille dataset
+    elif "taille" in user_input or "lignes" in user_input:
+        return f"{df.shape[0]} lignes et {df.shape[1]} colonnes"
+
+    # ❓ réponse par défaut
+    else:
+        return "🤖 Mode offline : pose une question comme 'moyenne', 'corrélation', ou 'statistiques'"
